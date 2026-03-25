@@ -1,0 +1,98 @@
+<?php
+session_start();
+include 'database.php'; // Σύνδεση με τη βάση δεδομένων
+
+// Ενεργοποίηση της εμφάνισης σφαλμάτων για έλεγχο
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Έλεγχος αν ο χρήστης είναι συνδεδεμένος και αν ο ρόλος του είναι διασώστης
+if (!isset($_SESSION['loggedin']) || $_SESSION['role'] !== 'diaswsths') {
+    // Αν δεν είναι συνδεδεμένος ή δεν έχει τον ρόλο του διασώστη, ανακατεύθυνση στη σελίδα login
+    header('Location: login.php');
+    exit();
+}
+?>
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <title>Μενού Διασώστη</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #e3f2fd; /* Απαλό γαλάζιο χρώμα */
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .container {
+            text-align: center;
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 600px; /* Περιορισμός του μέγιστου πλάτους */
+            box-sizing: border-box; /* Συμπερίληψη των περιθωρίων στο συνολικό πλάτος */
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); /* Προσθήκη shadow */
+        }
+
+        h2 {
+            margin-bottom: 30px;
+            color: #333;
+            font-size: 2.2em;
+        }
+
+        .buttons {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .button {
+            background-color: #64b5f6; /* Απαλό γαλάζιο χρώμα κουμπιών */
+            color: white;
+            border: none;
+            padding: 15px 20px; /* Ελαφρώς μεγαλύτερο padding */
+            text-decoration: none;
+            font-size: 1.1em; /* Ελαφρώς μεγαλύτερη γραμματοσειρά */
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            width: 100%;
+            max-width: 300px; /* Μέγιστο πλάτος κουμπιών */
+        }
+
+        .button:hover {
+            background-color: #42a5f5; /* Σκούρο γαλάζιο κατά την αιώρηση */
+        }
+
+    </style>
+    <script>
+        function confirmLogout() {
+            return confirm("Είστε σίγουροι ότι θέλετε να αποσυνδεθείτε;");
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h2>Καλωσόρισες Διασώστη!</h2>
+
+        <!-- Προσθήκη κουμπιών για το μενού του διασώστη -->
+        <div class="buttons">
+            <a href="cargo_management.php" class="button">Διαχείριση Φορτίου</a>
+            <a href="map_view_diaswsths.php" class="button">Προβολή Χάρτη</a>
+            
+            <a href="logout.php" class="button" onclick="return confirmLogout()">Αποσύνδεση</a>
+        </div>
+    </div>
+</body>
+</html>

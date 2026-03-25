@@ -1,0 +1,84 @@
+<?php
+session_start();
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || $_SESSION['username'] !== 'admin') {
+    header("Location: login.php");
+    exit();
+}
+
+include("database.php");
+    
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['jsonFile'])) {
+    $jsonFile = $_FILES['jsonFile']['tmp_name'];
+    $jsonData = file_get_contents($jsonFile);
+    $data = json_decode($jsonData, true);
+
+    if ($data) {
+        // Εισαγωγή ή ενημέρωση κατηγοριών
+        foreach ($data['categories'] as $category) {
+            $categoryId = $category['id'];
+            $categoryName = $category['category_name'];
+
+            $sql = "INSERT INTO categories (id, category_name) VALUES (?, ?)
+                    ON DUPLICATE KEY UPDATE category_name = VALUES(category_name)";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param('is', $categoryId, $categoryName);
+            $stmt->execute();
+            $stmt->close();
+        }
+
+        // Εισαγωγή ή ενημέρωση προϊόντων και λεπτομερειών
+        foreach ($data['items'] as $item) {
+            $itemId = $item['id'];
+            $itemName = $item['name'];
+            $categoryId = $item['category'];
+
+            $sql = "INSERT INTO products (id, name, category_id) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE name = VALUES(name), category_id = VALUES(category_id)";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param('isi', $itemId, $itemName, $categoryId);
+            $stmt->execute();
+            $stmt->close();
+
+            foreach ($item['details'] as $detail) {
+                $detailName = $detail['detail_name'];
+                $detailValue = $detail['detail_value'];
+
+                // Ελέγχουμε αν η λεπτομέρεια υπάρχει ήδη στη βάση
+                $checkSql = "SELECT * FROM product_details WHERE product_id = ? AND detail_name = ?";
+                $checkStmt = $conn->prepare($checkSql);
+                $checkStmt->bind_param('is', $itemId, $detailName);
+                $checkStmt->execute();
+                $result = $checkStmt->get_result();
+
+                if ($result->num_rows > 0) {
+                    // Αν υπάρχει, την ενημερώνουμε
+                    $updateSql = "UPDATE product_details SET detail_value = ? WHERE product_id = ? AND detail_name = ?";
+                    $updateStmt = $conn->prepare($updateSql);
+                    $updateStmt->bind_param('sis', $detailValue, $itemId, $detailName);
+                    $updateStmt->execute();
+                    $updateStmt->close();
+                } else {
+                    // Αν δεν υπάρχει, την εισάγουμε
+                    $insertSql = "INSERT INTO product_details (product_id, detail_name, detail_value) VALUES (?, ?, ?)";
+                    $insertStmt = $conn->prepare($insertSql);
+                    $insertStmt->bind_param('iss', $itemId, $detailName, $detailValue);
+                    $insertStmt->execute();
+                    $insertStmt->close();
+                }
+
+                $checkStmt->close();
+            }
+        }
+
+        $_SESSION['message'] = "Τα δεδομένα ενημερώθηκαν επιτυχώς!";
+    } else {
+        $_SESSION['message'] = "Σφάλμα κατά την επεξεργασία του αρχείου JSON.";
+    }
+} else {
+    $_SESSION['message'] = "Παρακαλώ επιλέξτε ένα αρχείο JSON.";
+}
+
+header("Location: admin.php");
+$conn->close();
+exit();
+?>

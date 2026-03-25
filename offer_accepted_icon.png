@@ -1,0 +1,573 @@
+<?php
+session_start();
+include 'database.php'; // Σύνδεση με τη βάση δεδομένων
+
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    header("Location: login.php");
+    exit();
+}
+// Προσθέτουμε έλεγχο αν η μεταβλητή $_SESSION["id"] υπάρχει
+if (!isset($_SESSION['id'])) {
+    echo "Η μεταβλητή id δεν υπάρχει στο session.";
+    exit();
+}
+?>
+
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <title>Χάρτης Διασώστη</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+       body, html {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f0f4f7;
+}
+
+h1 {
+    text-align: center;
+    margin-top: 20px;
+    color: #333;
+}
+
+a {
+    display: block;
+    text-align: center;
+    margin-bottom: 20px;
+    color: #007bff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.button-container {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 1em;
+    margin: 10px 0;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+input[type="checkbox"] {
+    margin-right: 5px;
+}
+
+.container {
+    display: flex;
+    height: calc(100vh - 180px);
+    margin: 0 20px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+#map-container {
+    flex: 50%;
+    height: 100%;
+    border-right: 1px solid #ddd;
+}
+
+#task-panel {
+    flex: 50%;
+    background-color: #fff;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+#task-panel h2 {
+    font-size: 1.5em;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #333;
+}
+
+#task-list {
+    list-style: none;
+    padding: 0;
+}
+
+#task-list div {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+}
+
+#task-list div p {
+    margin: 5px 0;
+    color: #555;
+}
+
+#task-list div button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    margin-top: 10px;
+    font-size: 0.9em;
+}
+
+#task-list div button:hover {
+    background-color: #0056b3;
+}
+
+#confirmButton, #cancelButton {
+    display: none;
+    margin: 10px;
+    padding: 10px;
+    width: 100%;
+    font-size: 1.1em;
+}
+
+#confirmButton {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+#cancelButton {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+footer {
+    text-align: center;
+    padding: 10px;
+    background-color: #f0f4f7;
+    color: #333;
+    border-top: 1px solid #ddd;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+}
+
+
+        
+        
+    </style>
+</head>
+<body>
+    <h1>Καλώς ήρθες, <?php echo htmlspecialchars($_SESSION['username']); ?>!</h1>
+    <a href="logout.php">Αποσύνδεση</a>
+
+    <div class="button-container">
+        <button onclick="updateDatabase()">Ανανέωση Δεδομένων</button>
+    </div>
+    <div>
+        <label><input type="checkbox" id="requestsPending" checked> Αιτήματα Εκκρεμή</label>
+        <label><input type="checkbox" id="requestsAccepted" checked> Αιτήματα Αναληφθέντα</label>
+        <label><input type="checkbox" id="offersPending" checked> Προσφορές Εκρεμμείς</label>
+        <label><input type="checkbox" id="offersAccepted" checked> Προσφορές Αναληφθέντες</label>
+        <label><input type="checkbox" id="vehiclesActive" checked> Οχήματα με ενεργά tasks</label>
+        <label><input type="checkbox" id="vehiclesInactive" checked> Οχήματα χωρίς tasks</label>
+        <label><input type="checkbox" id="polylines" checked> Ευθείες Γραμμές</label>
+    </div>
+
+    <div class="container">
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+    <div id="task-panel">
+        <h2>Τρέχοντα Tasks</h2>
+        <div id="task-list"></div>
+    </div>
+</div>
+
+    
+
+    <button id="confirmButton" onclick="confirmNewLocation()">Επιβεβαίωση Θέσης</button>
+    <button id="cancelButton" onclick="cancelNewLocation()">Ακύρωση</button>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        var map = L.map('map').setView([38.246242, 21.735085], 13);
+        var vehicleMarker; 
+        var originalLat, originalLng;
+        var newLat, newLng;
+        var vehicleId;
+        var markers = [];
+        var polylines = [];
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            errorTileUrl: 'https://via.placeholder.com/256x256.png?text=Tile+Not+Available'
+        }).addTo(map);
+
+        var icons = {
+            request_pending: L.icon({ iconUrl: 'request_pending_icon.png', iconSize: [25, 25], iconAnchor: [12, 25], popupAnchor: [0, -25] }),
+            request_accepted: L.icon({ iconUrl: 'request_accepted_icon.png', iconSize: [25, 25], iconAnchor: [12, 25], popupAnchor: [0, -25] }),
+            offer_pending: L.icon({ iconUrl: 'offer_pending_icon.png', iconSize: [25, 25], iconAnchor: [12, 25], popupAnchor: [0, -25] }),
+            offer_accepted: L.icon({ iconUrl: 'offer_accepted_icon.png', iconSize: [25, 25], iconAnchor: [12, 25], popupAnchor: [0, -25] }),
+            vehicle: L.icon({ iconUrl: 'vehicle_icon.png', iconSize: [30, 41], iconAnchor: [15, 41], popupAnchor: [0, -41] }),
+            rescuer: L.icon({ iconUrl: 'rescuer_icon.png', iconSize: [25, 25], iconAnchor: [12, 25], popupAnchor: [0, -25] })
+        };
+
+        var baseMarker = L.marker([38.246242, 21.735085], {draggable: false}).addTo(map)
+            .bindPopup('Βάση διασωστών').openPopup();
+
+        function clearPolylines() {
+            polylines.forEach(function(polyline) {
+                map.removeLayer(polyline);
+            });
+            polylines = [];
+        }
+
+        function clearMarkers() {
+            markers.forEach(function(marker) {
+                map.removeLayer(marker);
+            });
+            markers = [];
+        }
+
+        function loadMapData() {
+            clearMarkers();
+            clearPolylines();
+
+            // Παίρνουμε τις τιμές από τα φίλτρα
+            var showRequestsPending = document.getElementById('requestsPending').checked;
+            var showRequestsAccepted = document.getElementById('requestsAccepted').checked;
+            var showOffersPending = document.getElementById('offersPending').checked;
+            var showOffersAccepted = document.getElementById('offersAccepted').checked;
+            var showVehiclesActive = document.getElementById('vehiclesActive').checked;
+            var showVehiclesInactive = document.getElementById('vehiclesInactive').checked;
+            var showPolylines = document.getElementById('polylines').checked;
+
+            fetch('get_map_data_diaswsths.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({rescuer_username: '<?php echo $_SESSION["username"]; ?>'})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error loading data:', data.error);
+                    return;
+                }
+
+                // Εμφάνιση αιτημάτων ανάλογα με τα φίλτρα
+        data.requests.forEach(function(request) {
+            var markerIcon;
+
+            // Έλεγχος για accepted ή pending requests με τα σωστά εικονίδια
+            if (request.statuses.includes('accepted') && showRequestsAccepted) {
+                markerIcon = icons.request_accepted;
+            } else if (request.statuses.includes('pending') && showRequestsPending) {
+                markerIcon = icons.request_pending;
+            } else {
+                return;  // Αν δεν ανήκει σε κανένα φίλτρο, το αγνοούμε
+            }
+
+            var popupContent = `<b>${request.username}</b><br>`;
+            var items = request.items.split(', ');
+            var quantities = request.quantities.split(', ');
+            var statuses = request.statuses.split(', ');
+            var dates = request.dates.split(', ');
+            var ids = request.ids.split(', ');
+
+            // Εμφανίζουμε τα tasks ανάλογα με το φίλτρο
+            for (var i = 0; i < items.length; i++) {
+                if ((statuses[i] === 'pending' && showRequestsPending) || (statuses[i] === 'accepted' && showRequestsAccepted)) {
+                    popupContent += `
+                        <b>Αίτημα:</b> ${items[i]} - <b>Ποσότητα:</b> ${quantities[i]}<br>
+                        <b>Ημερομηνία Καταχώρησης:</b> ${dates[i]}<br>
+                        <b>Κατάσταση:</b> ${statuses[i]}<br>
+                        ${statuses[i] === 'pending' ? `<button onclick="takeRequest(${ids[i]})">Ανάληψη</button>` : ''}
+                        <hr>
+                    `;
+                }
+            }
+
+            var marker = L.marker([request.lat, request.lng], {icon: markerIcon}).addTo(map)
+                .bindPopup(popupContent);
+            markers.push(marker);
+        });
+
+        // Εμφάνιση προσφορών ανάλογα με τα φίλτρα
+        data.offers.forEach(function(offer) {
+            var markerIcon;
+
+            // Έλεγχος για accepted ή pending offers με τα σωστά εικονίδια
+            if (offer.statuses.includes('accepted') && showOffersAccepted) {
+                markerIcon = icons.offer_accepted;
+            } else if (offer.statuses.includes('pending') && showOffersPending) {
+                markerIcon = icons.offer_pending;
+            } else {
+                return;  // Αν δεν ανήκει σε κανένα φίλτρο, το αγνοούμε
+            }
+
+            var popupContent = `<b>${offer.username}</b><br>`;
+            var items = offer.items.split(', ');
+            var quantities = offer.quantities.split(', ');
+            var statuses = offer.statuses.split(', ');
+            var dates = offer.dates.split(', ');
+            var ids = offer.ids.split(', ');
+
+            // Εμφανίζουμε τις προσφορές ανάλογα με το φίλτρο
+            for (var i = 0; i < items.length; i++) {
+                if ((statuses[i] === 'pending' && showOffersPending) || (statuses[i] === 'accepted' && showOffersAccepted)) {
+                    popupContent += `
+                        <b>Προσφορά:</b> ${items[i]} - <b>Ποσότητα:</b> ${quantities[i]}<br>
+                        <b>Ημερομηνία Καταχώρησης:</b> ${dates[i]}<br>
+                        <b>Κατάσταση:</b> ${statuses[i]}<br>
+                        ${statuses[i] === 'pending' ? `<button onclick="takeOffer(${ids[i]})">Ανάληψη</button>` : ''}
+                        <hr>
+                    `;
+                }
+            }
+
+            var marker = L.marker([offer.lat, offer.lng], {icon: markerIcon}).addTo(map)
+                .bindPopup(popupContent);
+            markers.push(marker);
+        });
+                // Εμφάνιση οχημάτων ανάλογα με τα φίλτρα
+                data.vehicles.forEach(function(vehicle) {
+                    if ((vehicle.status === 'active' && showVehiclesActive) || 
+                        (vehicle.status === 'inactive' && showVehiclesInactive)) {
+
+                        var markerIcon = icons.vehicle;
+                        
+                        // Ελέγχουμε αν το όχημα ανήκει στον τρέχοντα διασώστη
+                        if (vehicle.rescuer_username === '<?php echo $_SESSION["username"]; ?>') {
+                            vehicleMarker = L.marker([vehicle.lat, vehicle.lng], {
+                                icon: markerIcon,
+                                draggable: true  // Το όχημα θα μπορεί να μετακινηθεί
+                            }).addTo(map)
+                            .bindPopup(`<b>${vehicle.username}</b><br>Φορτίο: ${vehicle.load}<br>Κατάσταση: ${vehicle.status}`);
+
+                            markers.push(vehicleMarker); 
+                    // Φόρτωση των tasks που έχει αναλάβει το όχημα (μόνο accepted)
+                    var assignedTasks = data.requests.filter(function(request) {
+                        return request.vehicle == vehicle.id && request.statuses.includes('accepted');
+                    });
+
+                    var assignedOffers = data.offers.filter(function(offer) {
+                        return offer.vehicle == vehicle.id && offer.statuses.includes('accepted');
+                    });
+
+                    // Σχεδιάζουμε γραμμές μόνο για accepted tasks και αν το φίλτρο για τις γραμμές είναι ενεργοποιημένο
+                    if (showPolylines) {
+                        drawPolylinesForVehicle(vehicle, assignedTasks.concat(assignedOffers));
+                    }
+
+
+            
+
+    // Add event listeners after loadMapData is defined
+    document.getElementById('requestsPending').addEventListener('change', loadMapData);
+    document.getElementById('requestsAccepted').addEventListener('change', loadMapData);
+    document.getElementById('offersPending').addEventListener('change', loadMapData);
+    document.getElementById('offersAccepted').addEventListener('change', loadMapData);
+    document.getElementById('vehiclesActive').addEventListener('change', loadMapData);
+    document.getElementById('vehiclesInactive').addEventListener('change', loadMapData);
+    document.getElementById('polylines').addEventListener('change', loadMapData);
+
+
+                            // Αποθηκεύουμε τις αρχικές συντεταγμένες
+                            originalLat = vehicle.lat;
+                            originalLng = vehicle.lng;
+                            vehicleId = vehicle.vehicle_id;
+
+                            // Όταν το όχημα μετακινείται, καταγράφουμε τις νέες συντεταγμένες και εμφανίζουμε τα κουμπιά επιβεβαίωσης και ακύρωσης
+                            vehicleMarker.on('dragend', function(e) {
+                                newLat = e.target.getLatLng().lat;
+                                newLng = e.target.getLatLng().lng;
+                                document.getElementById('confirmButton').style.display = 'inline-block';
+                                document.getElementById('cancelButton').style.display = 'inline-block';
+                            });
+
+                            markers.push(vehicleMarker);
+
+                        } else {
+                            // Προσθήκη των άλλων οχημάτων που δεν ανήκουν στον τρέχοντα διασώστη
+                            var marker = L.marker([vehicle.lat, vehicle.lng], {icon: markerIcon}).addTo(map)
+                                .bindPopup(`<b>${vehicle.username}</b><br>Φορτίο: ${vehicle.load}<br>Κατάσταση: ${vehicle.status}`);
+                            
+                            markers.push(marker);
+                        }
+                    }
+                });
+
+                
+            })
+            .catch(error => {
+                console.error('Error loading data:', error);
+            });
+        }
+
+        function confirmNewLocation() {
+            console.log("Vehicle ID:", vehicleId);
+            console.log("New Latitude:", newLat);
+            console.log("New Longitude:", newLng);
+
+            fetch('update_vehicle_position.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat: newLat, lng: newLng, id: vehicleId })
+            })
+            .then(response => response.text())
+            .then(text => {
+                console.log("Response:", text);
+                try {
+                    const data = JSON.parse(text);
+                    if (data.success) {
+                        alert('Η θέση του οχήματος ενημερώθηκε επιτυχώς!');
+                        document.getElementById('confirmButton').style.display = 'none';
+                        document.getElementById('cancelButton').style.display = 'none';
+                    } else {
+                        alert('Σφάλμα κατά την ενημέρωση της θέσης.');
+                    }
+                } catch (e) {
+                    console.error('Error parsing JSON:', e);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function cancelNewLocation() {
+            vehicleMarker.setLatLng([originalLat, originalLng]);
+            document.getElementById('confirmButton').style.display = 'none';
+            document.getElementById('cancelButton').style.display = 'none';
+        }
+
+        function takeRequest(requestId) {
+    console.log("Request ID:", requestId);  // Έλεγχος ότι το ID εμφανίζεται σωστά
+    fetch('accept_request.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ request_id: requestId })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Το αίτημα αναλήφθηκε επιτυχώς!');
+            loadMapData();
+        } else {
+            alert('Σφάλμα: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error processing request. Please try again.');
+    });
+}
+
+
+        function takeOffer(offerId) {
+            console.log("Offer ID:", offerId);  // Έλεγχος ότι το ID εμφανίζεται σωστά
+            fetch('accept_offer.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ offer_id: offerId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Η προσφορά αναλήφθηκε επιτυχώς!');
+                    loadMapData();
+                } else {
+                    alert('Σφάλμα: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+        alert('Error processing request. Please try again.');
+    });
+        }
+        
+        function drawPolylinesForVehicle(vehicle, tasks) {
+    clearPolylines();  // Καθαρίζουμε τις παλιές γραμμές αν υπάρχουν
+    console.log("Tasks for vehicle:", tasks);  // Εκτύπωση για να ελέγξουμε αν έχουμε τα σωστά tasks
+
+    tasks.forEach(function(task) {
+        // Ελέγχουμε αν το status περιέχει μόνο 'accepted' και όχι 'pending'
+        var statusesArray = task.statuses.split(', ');
+
+        // Αν υπάρχει τουλάχιστον ένα 'accepted' και δεν υπάρχει κανένα 'pending', σχεδιάζουμε τη γραμμή
+        if (statusesArray.includes('accepted') ||(statusesArray.includes('accepted') && !statusesArray.includes('pending'))) {
+            console.log("Drawing line for task:", task);  // Έλεγχος ότι σχεδιάζεται γραμμή για τα accepted tasks
+            var polyline = L.polyline([
+                [vehicle.lat, vehicle.lng],   // Συντεταγμένες του οχήματος
+                [task.lat, task.lng]          // Συντεταγμένες του task
+            ], { color: 'blue' }).addTo(map);  // Προσθήκη της πολυγραμμής στο χάρτη
+
+            polylines.push(polyline);  // Αποθηκεύουμε την πολυγραμμή για μελλοντική χρήση
+        }
+    });
+}
+
+function loadCurrentTasks() {
+    fetch('get_tasks.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            console.error('Error:', data.error);
+            return;
+        }
+        
+        const tasksList = document.getElementById('task-list');
+        tasksList.innerHTML = '';
+
+        data.forEach(function(task) {
+            const taskElement = document.createElement('div');
+            taskElement.innerHTML = `
+                <p><b>Πολίτης:</b> ${task.username}</p>
+                <p><b>Τηλέφωνο:</b> ${task.phone}</p>
+                <p><b>Ημερομηνία Καταχώρησης:</b> ${task.date_created}</p>
+                <p><b>Είδος:</b> ${task.item} - <b>Ποσότητα:</b> ${task.quantity}</p>
+                <button onclick="completeTask(${task.id})">Ολοκληρώθηκε</button>
+                <button onclick="cancelTask(${task.id})">Ακύρωση</button>
+                <hr>
+            `;
+            tasksList.appendChild(taskElement);
+        });
+    })
+    .catch(error => {
+        console.error('Error loading tasks:', error);
+    });
+}
+
+
+        document.addEventListener('DOMContentLoaded', function () {
+            loadMapData();
+            loadCurrentTasks();
+        });
+    </script>
+</body>
+</html>
